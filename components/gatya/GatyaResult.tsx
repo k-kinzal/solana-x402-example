@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { ExternalLink, RotateCcw } from 'lucide-react';
 import { useNetwork } from '@/hooks/useNetwork';
 import { ParticleEffect } from './ParticleEffect';
+import { vibrateForRarity } from '@/lib/vibration';
 
 interface GatyaResultProps {
   result: GatyaMessage | null;
@@ -25,6 +27,13 @@ export function GatyaResult({
   onRetry,
 }: GatyaResultProps) {
   const { network } = useNetwork();
+
+  // Haptic feedback when result is shown
+  useEffect(() => {
+    if (isOpen && result) {
+      vibrateForRarity(result.rarity);
+    }
+  }, [isOpen, result]);
 
   if (!result) return null;
 

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Sparkles, Wallet } from 'lucide-react';
 import { GatyaStatus } from '@/hooks/useGatya';
 import { PAYMENT_AMOUNT_DISPLAY } from '@/lib/solana/constants';
+import { vibrateTap } from '@/lib/vibration';
 
 interface GatyaButtonProps {
   onClick: () => void;
@@ -21,6 +22,9 @@ export function GatyaButton({ onClick, status, disabled }: GatyaButtonProps) {
   const isLoading = ['fetching_quote', 'awaiting_signature', 'processing'].includes(status);
 
   const handleClick = () => {
+    // Haptic feedback on tap
+    vibrateTap();
+
     if (!connected) {
       setVisible(true);
       return;
