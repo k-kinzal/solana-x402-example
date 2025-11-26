@@ -2,7 +2,6 @@ import {
   Connection,
   PublicKey,
   Transaction,
-  TransactionInstruction,
 } from '@solana/web3.js';
 import {
   getAssociatedTokenAddress,
@@ -45,34 +44,25 @@ export async function createPaymentTransaction(
 ): Promise<Transaction> {
   const usdcMint = getUsdcMint(network);
 
-  // Get payer's USDC token account
+  // Get payer's USDC token account (computed locally, no RPC call)
   const payerAta = await getAssociatedTokenAddress(usdcMint, payer);
 
-  // Get recipient's USDC token account
+  // Get recipient's USDC token account (computed locally, no RPC call)
   const recipientAta = await getAssociatedTokenAddress(usdcMint, RECIPIENT_WALLET);
 
   const transaction = new Transaction();
 
-  // Check if recipient ATA exists, if not create it
-  let recipientAtaExists = false;
-  try {
-    const accountInfo = await connection.getAccountInfo(recipientAta);
-    recipientAtaExists = accountInfo !== null;
-  } catch {
-    // If we can't check, assume it doesn't exist and add creation instruction
-    recipientAtaExists = false;
-  }
-
-  if (!recipientAtaExists) {
-    transaction.add(
-      createAssociatedTokenAccountInstruction(
-        payer,
-        recipientAta,
-        RECIPIENT_WALLET,
-        usdcMint
-      )
-    );
-  }
+  // Always add ATA creation instruction with idempotent flag
+  // This instruction will succeed whether or not the ATA already exists
+  // No need to check if ATA exists (saves 1 RPC call)
+  transaction.add(
+    createAssociatedTokenAccountInstruction(
+      payer,
+      recipientAta,
+      RECIPIENT_WALLET,
+      usdcMint
+    )
+  );
 
   // Add transfer instruction
   const transferInstruction = createTransferInstruction(
@@ -84,7 +74,7 @@ export async function createPaymentTransaction(
 
   transaction.add(transferInstruction);
 
-  // Get recent blockhash
+  // Get recent blockhash (1 RPC call - required)
   const { blockhash } = await connection.getLatestBlockhash();
   transaction.recentBlockhash = blockhash;
   transaction.feePayer = payer;

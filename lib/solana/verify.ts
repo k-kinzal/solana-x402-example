@@ -5,7 +5,6 @@ import {
 } from '@solana/web3.js';
 import {
   TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
 } from '@solana/spl-token';
 import { RECIPIENT_WALLET, PAYMENT_AMOUNT, getUsdcMint, getEndpoint, NetworkType } from './constants';
@@ -36,7 +35,7 @@ export async function verifyAndBroadcastTransaction(
     } catch {
       transaction = Transaction.from(serializedTx);
     }
-  } catch (e) {
+  } catch {
     return { valid: false, error: 'Invalid transaction format' };
   }
 
@@ -54,10 +53,10 @@ export async function verifyAndBroadcastTransaction(
     return { valid: false, error: 'Transaction not signed' };
   }
 
-  // 3. Get expected recipient ATA
+  // 3. Get expected recipient ATA (computed locally, no RPC call)
   const recipientAta = await getAssociatedTokenAddress(usdcMint, RECIPIENT_WALLET);
 
-  // 4. Verify transaction contains valid SPL transfer
+  // 4. Verify transaction contains valid SPL transfer (local verification, no RPC call)
   let foundValidTransfer = false;
 
   if (transaction instanceof VersionedTransaction) {
@@ -112,53 +111,43 @@ export async function verifyAndBroadcastTransaction(
     return { valid: false, error: 'Invalid transfer: wrong destination or insufficient amount' };
   }
 
-  // 5. Simulate transaction
-  try {
-    let simulation;
-    if (transaction instanceof VersionedTransaction) {
-      simulation = await connection.simulateTransaction(transaction);
-    } else {
-      simulation = await connection.simulateTransaction(transaction, undefined, false);
-    }
-
-    if (simulation.value.err) {
-      const errStr = JSON.stringify(simulation.value.err);
-      let errorMessage = `Simulation failed: ${errStr}`;
-
-      // Provide helpful error messages for common issues
-      if (errStr.includes('InvalidAccountData')) {
-        errorMessage = 'Transaction failed: You may not have USDC in your wallet. Get devnet USDC from https://faucet.circle.com/';
-      } else if (errStr.includes('InsufficientFunds')) {
-        errorMessage = 'Insufficient USDC balance. Please ensure you have at least 0.01 USDC.';
-      }
-
-      return {
-        valid: false,
-        error: errorMessage,
-      };
-    }
-  } catch (e) {
-    return { valid: false, error: `Simulation error: ${e}` };
-  }
-
-  // 6. Broadcast transaction
+  // 5. Broadcast transaction directly (1 RPC call)
+  // Skip simulation to reduce RPC calls - errors will be caught from sendRawTransaction
   try {
     const signature = await connection.sendRawTransaction(serializedTx, {
-      skipPreflight: true,
+      skipPreflight: false, // Let the RPC node do preflight check
       maxRetries: 3,
     });
 
-    // Wait for confirmation (optional, can be removed for faster response)
-    // await connection.confirmTransaction(signature, 'confirmed');
-
     return { valid: true, signature };
   } catch (e: unknown) {
-    const error = e as { message?: string };
-    // Check if it's an "already processed" error - this means the transaction was already successful
-    if (error.message?.includes('already been processed') ||
-        error.message?.includes('AlreadyProcessed')) {
+    const error = e as { message?: string; logs?: string[] };
+    const errorMessage = error.message || 'Unknown error';
+
+    // Check if it's an "already processed" error
+    if (errorMessage.includes('already been processed') ||
+        errorMessage.includes('AlreadyProcessed')) {
       return { valid: false, error: 'Transaction already processed' };
     }
-    return { valid: false, error: `Broadcast failed: ${error.message || 'Unknown error'}` };
+
+    // Parse common errors for better UX
+    if (errorMessage.includes('InvalidAccountData') ||
+        errorMessage.includes('insufficient funds') ||
+        errorMessage.includes('0x1')) {
+      return {
+        valid: false,
+        error: 'Transaction failed: You may not have USDC in your wallet. Get devnet USDC from https://faucet.circle.com/'
+      };
+    }
+
+    if (errorMessage.includes('InsufficientFunds') || errorMessage.includes('0x1771')) {
+      return { valid: false, error: 'Insufficient USDC balance. Please ensure you have at least 0.01 USDC.' };
+    }
+
+    if (errorMessage.includes('Blockhash not found') || errorMessage.includes('BlockhashNotFound')) {
+      return { valid: false, error: 'Transaction expired. Please try again.' };
+    }
+
+    return { valid: false, error: `Transaction failed: ${errorMessage}` };
   }
 }
