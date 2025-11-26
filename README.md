@@ -2,7 +2,7 @@
 
 A sample implementation of the [x402 protocol](https://www.x402.org/) on Solana blockchain, demonstrating HTTP 402 Payment Required flow with USDC payments.
 
-**Live Demo**: [https://solana-x402-example1.vercel.app/](https://solana-x402-example1.vercel.app/)
+**Live Demo**: [https://solana-x402-example.vercel.app/](https://solana-x402-example.vercel.app/)
 
 ## What is x402?
 
