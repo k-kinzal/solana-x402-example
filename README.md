@@ -2,6 +2,8 @@
 
 A sample implementation of the [x402 protocol](https://www.x402.org/) on Solana blockchain, demonstrating HTTP 402 Payment Required flow with USDC payments.
 
+**Live Demo**: [https://solana-x402-example1.vercel.app/](https://solana-x402-example1.vercel.app/)
+
 ## What is x402?
 
 x402 is an open protocol that enables native payments on the web using the HTTP 402 status code. It allows servers to request payment before providing access to resources.
