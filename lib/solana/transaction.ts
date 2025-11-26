@@ -6,7 +6,7 @@ import {
 import {
   getAssociatedTokenAddress,
   createTransferInstruction,
-  createAssociatedTokenAccountInstruction,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
 import { PAYMENT_AMOUNT, getUsdcMint, RECIPIENT_WALLET, NetworkType } from './constants';
 
@@ -52,11 +52,11 @@ export async function createPaymentTransaction(
 
   const transaction = new Transaction();
 
-  // Always add ATA creation instruction with idempotent flag
+  // Always add idempotent ATA creation instruction
   // This instruction will succeed whether or not the ATA already exists
   // No need to check if ATA exists (saves 1 RPC call)
   transaction.add(
-    createAssociatedTokenAccountInstruction(
+    createAssociatedTokenAccountIdempotentInstruction(
       payer,
       recipientAta,
       RECIPIENT_WALLET,
