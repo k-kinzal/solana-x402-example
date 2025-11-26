@@ -8,7 +8,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
 } from '@solana/spl-token';
-import { RECIPIENT_WALLET, PAYMENT_AMOUNT, getUsdcMint, NetworkType, NETWORKS } from './constants';
+import { RECIPIENT_WALLET, PAYMENT_AMOUNT, getUsdcMint, getEndpoint, NetworkType } from './constants';
 
 export interface VerificationResult {
   valid: boolean;
@@ -20,7 +20,7 @@ export async function verifyAndBroadcastTransaction(
   base64Tx: string,
   network: NetworkType
 ): Promise<VerificationResult> {
-  const connection = new Connection(NETWORKS[network].endpoint, 'confirmed');
+  const connection = new Connection(getEndpoint(network), 'confirmed');
   const usdcMint = getUsdcMint(network);
 
   // 1. Decode transaction
