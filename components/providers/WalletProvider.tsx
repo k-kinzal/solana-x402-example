@@ -55,13 +55,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
   useEffect(() => {
     if (selectedWallet) return;
 
-    console.log('[WalletProvider] Auto-connect check:', {
-      attempted: autoConnectAttempted.current,
-      walletsCount: wallets.length,
-      walletNames: wallets.map(w => w.name),
-      hasSelectedWallet: !!selectedWallet,
-    });
-
     // Wait a bit for wallet extensions to register, then try auto-connect
     const timeoutId = setTimeout(() => {
       if (autoConnectAttempted.current || wallets.length === 0 || selectedWallet) return;
@@ -69,14 +62,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       const tryAutoConnect = async () => {
         for (const wallet of wallets) {
-          console.log('[WalletProvider] Trying auto-connect for:', wallet.name, 'features:', wallet.features);
           if (!wallet.features.includes(StandardConnect)) continue;
 
           try {
             const connectFeature = getWalletFeature(wallet, StandardConnect) as StandardConnectFeature[typeof StandardConnect];
             // Silent connect: only returns accounts if already authorized
             const { accounts } = await connectFeature.connect({ silent: true });
-            console.log('[WalletProvider] Silent connect result for', wallet.name, ':', accounts);
 
             if (accounts && accounts.length > 0) {
               setSelectedWallet(wallet);
@@ -84,11 +75,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 accounts.some((connected) => connected.address === a.address)
               );
               setSelectedAccount(uiAccount ?? wallet.accounts[0] ?? null);
-              console.log('[WalletProvider] Auto-connected to:', wallet.name);
               break; // Stop after first successful connection
             }
-          } catch (err) {
-            console.log('[WalletProvider] Silent connect failed for', wallet.name, ':', err);
+          } catch {
             // Silent connect failed, try next wallet
           }
         }
