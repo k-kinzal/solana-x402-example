@@ -6,7 +6,10 @@ import {
 
 // Get the base URL for facilitator
 const getFacilitatorUrl = () => {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  // Use NEXT_PUBLIC_BASE_URL if set, otherwise fall back to VERCEL_URL for Vercel deployments
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    || 'http://localhost:3000';
   return `${baseUrl}/api/facilitator` as `${string}://${string}`;
 };
 
