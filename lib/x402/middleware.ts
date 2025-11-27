@@ -88,20 +88,32 @@ async function callFacilitatorVerify(
   paymentPayload: unknown,
   paymentRequirements: PaymentRequirements
 ): Promise<VerifyResponse> {
-  const response = await fetch(`${facilitatorUrl}/verify`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      paymentPayload,
-      paymentRequirements,
-    }),
-  });
+  const verifyUrl = `${facilitatorUrl}/verify`;
+  console.log('[Middleware] Calling verify:', verifyUrl);
 
-  if (!response.ok) {
+  try {
+    const response = await fetch(verifyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentPayload,
+        paymentRequirements,
+      }),
+    });
+
+    console.log('[Middleware] Verify response status:', response.status);
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('[Middleware] Verify error response:', text);
+      return { isValid: false, invalidReason: 'unexpected_verify_error' };
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('[Middleware] Verify fetch error:', error);
     return { isValid: false, invalidReason: 'unexpected_verify_error' };
   }
-
-  return response.json();
 }
 
 /**
