@@ -167,7 +167,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(response);
       }
 
-    } catch {
+    } catch (txError) {
+      console.error('Transaction decode error:', txError);
       const response: VerifyResponse = {
         isValid: false,
         invalidReason: 'invalid_payload',
@@ -181,7 +182,8 @@ export async function POST(request: NextRequest) {
     };
     return NextResponse.json(response);
 
-  } catch {
+  } catch (error) {
+    console.error('Verify error:', error);
     const response: VerifyResponse = {
       isValid: false,
       invalidReason: 'unexpected_verify_error',
