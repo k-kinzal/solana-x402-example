@@ -1,13 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import { useWallet } from '@/components/providers/WalletProvider';
 import { cn } from '@/lib/utils';
 import { Sparkles, Wallet } from 'lucide-react';
 import { GatyaStatus } from '@/hooks/useGatya';
 import { PAYMENT_AMOUNT_DISPLAY } from '@/lib/solana/constants';
 import { vibrateTap } from '@/lib/vibration';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface GatyaButtonProps {
   onClick: () => void;
@@ -16,17 +23,26 @@ interface GatyaButtonProps {
 }
 
 export function GatyaButton({ onClick, status, disabled }: GatyaButtonProps) {
-  const { connected } = useWallet();
-  const { setVisible } = useWalletModal();
+  const { wallets, selectedAccount, connected, connect, connecting } = useWallet();
+  const [showWalletDialog, setShowWalletDialog] = useState(false);
 
+  const address = selectedAccount?.address;
   const isLoading = ['fetching_quote', 'awaiting_signature', 'processing'].includes(status);
 
+  const handleSelectWallet = async (wallet: typeof wallets[number]) => {
+    try {
+      await connect(wallet);
+      setShowWalletDialog(false);
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+    }
+  };
+
   const handleClick = () => {
-    // Haptic feedback on tap
     vibrateTap();
 
-    if (!connected) {
-      setVisible(true);
+    if (!connected || !address) {
+      setShowWalletDialog(true);
       return;
     }
     onClick();
@@ -125,7 +141,7 @@ export function GatyaButton({ onClick, status, disabled }: GatyaButtonProps) {
       {/* Main button */}
       <motion.button
         onClick={handleClick}
-        disabled={disabled || isLoading}
+        disabled={disabled || isLoading || connecting}
         className={cn(
           'relative w-56 h-56 md:w-72 md:h-72 lg:w-80 lg:h-80',
           'rounded-full',
@@ -233,7 +249,7 @@ export function GatyaButton({ onClick, status, disabled }: GatyaButtonProps) {
                 GATYA
               </motion.span>
             </motion.div>
-          ) : !connected ? (
+          ) : !connected || !address ? (
             <>
               <Wallet className="w-12 h-12 md:w-16 md:h-16" />
               <span className="text-2xl md:text-3xl font-[family-name:var(--font-orbitron)] tracking-wider">GATYA</span>
@@ -250,6 +266,40 @@ export function GatyaButton({ onClick, status, disabled }: GatyaButtonProps) {
           )}
         </div>
       </motion.button>
+
+      {/* Wallet selection dialog */}
+      <Dialog open={showWalletDialog} onOpenChange={setShowWalletDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect Wallet</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 mt-4">
+            {wallets.map((wallet) => (
+              <Button
+                key={wallet.name}
+                variant="outline"
+                className="justify-start gap-3 h-14"
+                onClick={() => handleSelectWallet(wallet)}
+                disabled={connecting}
+              >
+                {wallet.icon && (
+                  <img
+                    src={wallet.icon}
+                    alt={wallet.name}
+                    className="w-6 h-6"
+                  />
+                )}
+                {wallet.name}
+              </Button>
+            ))}
+            {wallets.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No wallets detected. Please install a Solana wallet like Phantom.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

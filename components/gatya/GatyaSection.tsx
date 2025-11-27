@@ -1,33 +1,25 @@
 'use client';
 
-import { useGatya } from '@/hooks/useGatya';
+import { useWallet } from '@/components/providers/WalletProvider';
 import { GatyaButton } from './GatyaButton';
 import { GatyaResult } from './GatyaResult';
+import { GatyaSectionConnected } from './GatyaSectionConnected';
 
 export function GatyaSection() {
-  const { status, result, transactionSignature, executeGatya, reset, isLoading } = useGatya();
+  const { selectedAccount, connected } = useWallet();
 
-  const handleRetry = () => {
-    reset();
-    executeGatya();
-  };
+  // When wallet is connected, use the connected component that can use hooks properly
+  if (connected && selectedAccount) {
+    return <GatyaSectionConnected account={selectedAccount} />;
+  }
 
+  // When not connected, show the button that prompts connection
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] px-4">
-      {/* Gatya Button */}
       <GatyaButton
-        onClick={executeGatya}
-        status={status}
-        disabled={isLoading}
-      />
-
-      {/* Result dialog */}
-      <GatyaResult
-        result={result}
-        transactionSignature={transactionSignature}
-        isOpen={status === 'success' && result !== null}
-        onClose={reset}
-        onRetry={handleRetry}
+        onClick={() => {}}
+        status="idle"
+        disabled={false}
       />
     </div>
   );

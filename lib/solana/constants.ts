@@ -1,6 +1,9 @@
-import { PublicKey } from '@solana/web3.js';
+import { address, type Address } from '@solana/kit';
 
 export type NetworkType = 'mainnet-beta' | 'devnet' | 'testnet';
+
+// x402 network names
+export type X402Network = 'solana' | 'solana-devnet';
 
 // Default RPC endpoints (can be overridden via environment variables)
 const DEFAULT_ENDPOINTS: Record<NetworkType, string> = {
@@ -63,20 +66,26 @@ export const NETWORKS: Record<NetworkType, {
   },
 };
 
-export const RECIPIENT_WALLET = new PublicKey('DE3nhgFvCa7MryXjcdtMyo8m9y7Vnzn4gHSmjNGzgtyp');
-export const RECIPIENT_WALLET_STRING = 'DE3nhgFvCa7MryXjcdtMyo8m9y7Vnzn4gHSmjNGzgtyp';
+export const RECIPIENT_WALLET: Address = address('DE3nhgFvCa7MryXjcdtMyo8m9y7Vnzn4gHSmjNGzgtyp');
 
 // 0.01 USDC (USDC has 6 decimals)
-export const PAYMENT_AMOUNT = 10000;
+export const PAYMENT_AMOUNT = BigInt(10000);
 export const PAYMENT_AMOUNT_DISPLAY = '0.01';
 
 export const DEFAULT_NETWORK: NetworkType = 'devnet';
 
-export function getUsdcMint(network: NetworkType): PublicKey {
-  return new PublicKey(NETWORKS[network].usdcMint);
+export function getUsdcMint(network: NetworkType): Address {
+  return address(NETWORKS[network].usdcMint);
 }
 
 export function getEndpoint(network: NetworkType): string {
-  // Always get fresh endpoint (in case env vars are set)
   return getNetworkEndpoint(network);
+}
+
+export function toX402Network(network: NetworkType): X402Network {
+  return network === 'mainnet-beta' ? 'solana' : 'solana-devnet';
+}
+
+export function fromX402Network(x402Network: X402Network): NetworkType {
+  return x402Network === 'solana' ? 'mainnet-beta' : 'devnet';
 }

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { useNetwork } from './useNetwork';
-import { createPaymentTransaction } from '@/lib/solana/transaction';
+import { useState, useCallback, useMemo } from 'react';
+import { useWallet } from '@/components/providers/WalletProvider';
+import { wrapFetchWithPayment, type Signer } from 'x402-fetch';
+import { selectPaymentRequirements } from 'x402/client';
+import type { PaymentRequirements } from 'x402/types';
 import { GatyaMessage } from '@/lib/gatya/messages';
+import { NETWORKS, PAYMENT_AMOUNT } from '@/lib/solana/constants';
 import { toast } from 'sonner';
 
 export type GatyaStatus = 'idle' | 'fetching_quote' | 'awaiting_signature' | 'processing' | 'success' | 'error';
@@ -16,10 +18,13 @@ interface GatyaState {
   transactionSignature: string | null;
 }
 
-export function useGatya() {
-  const { publicKey, signTransaction, connected } = useWallet();
-  const { connection } = useConnection();
-  const { network } = useNetwork();
+interface UseGatyaOptions {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  transactionSigner: any;
+}
+
+export function useGatya({ transactionSigner }: UseGatyaOptions) {
+  const { connected, selectedAccount } = useWallet();
 
   const [state, setState] = useState<GatyaState>({
     status: 'idle',
@@ -27,6 +32,40 @@ export function useGatya() {
     error: null,
     transactionSignature: null,
   });
+
+  // Create x402-wrapped fetch when signer is available
+  const fetchWithPayment = useMemo(() => {
+    if (!connected || !selectedAccount || !transactionSigner) return null;
+
+    // Custom selector that sets feePayer to the client's wallet address
+    const customSelector = (
+      paymentRequirements: PaymentRequirements[],
+      network?: Parameters<typeof selectPaymentRequirements>[1],
+      scheme?: Parameters<typeof selectPaymentRequirements>[2]
+    ): PaymentRequirements => {
+      const selected = selectPaymentRequirements(paymentRequirements, network, scheme);
+      // Override feePayer with the client's wallet address
+      return {
+        ...selected,
+        extra: {
+          ...selected.extra,
+          feePayer: selectedAccount.address,
+        },
+      };
+    };
+
+    // x402-fetch expects a Signer type which is EvmSigner | SvmSigner
+    // @solana/react's TransactionModifyingSigner is compatible with @solana/kit's TransactionSigner
+    return wrapFetchWithPayment(
+      fetch,
+      transactionSigner as unknown as Signer,
+      PAYMENT_AMOUNT,
+      customSelector,
+      {
+        svmConfig: { rpcUrl: NETWORKS.devnet.endpoint }
+      }
+    );
+  }, [connected, selectedAccount, transactionSigner]);
 
   const reset = useCallback(() => {
     setState({
@@ -38,63 +77,38 @@ export function useGatya() {
   }, []);
 
   const executeGatya = useCallback(async () => {
-    if (!publicKey || !signTransaction || !connected) {
+    if (!connected || !selectedAccount || !fetchWithPayment) {
       toast.error('Please connect your wallet first');
       return;
     }
 
     try {
-      // Step 1: Fetch payment requirements (402 response)
+      // Step 1: Start fetching (x402-fetch handles the 402 flow automatically)
       setState(prev => ({ ...prev, status: 'fetching_quote', error: null }));
 
-      const quoteResponse = await fetch('/api/gatya', {
-        headers: {
-          'X-Network': network,
-        },
-      });
-
-      if (quoteResponse.status !== 402) {
-        throw new Error('Unexpected response from server');
-      }
-
-      // Step 2: Create payment transaction
+      // Step 2: Request will automatically:
+      // - Get 402 response with payment requirements
+      // - Create and sign the payment transaction
+      // - Retry with X-PAYMENT header
       setState(prev => ({ ...prev, status: 'awaiting_signature' }));
       toast.info('Please sign the transaction in your wallet');
 
-      const transaction = await createPaymentTransaction(
-        connection,
-        publicKey,
-        network
-      );
+      const response = await fetchWithPayment('/api/gatya');
 
-      // Step 3: Sign transaction with wallet
-      const signedTransaction = await signTransaction(transaction);
-
-      // Step 4: Send payment with X-Payment header
       setState(prev => ({ ...prev, status: 'processing' }));
 
-      const serializedTx = signedTransaction.serialize();
-      const base64Tx = Buffer.from(serializedTx).toString('base64');
+      const result = await response.json();
 
-      const paymentResponse = await fetch('/api/gatya', {
-        headers: {
-          'X-Network': network,
-          'X-Payment': base64Tx,
-        },
-      });
-
-      const result = await paymentResponse.json();
-
-      if (!paymentResponse.ok || paymentResponse.status === 402) {
+      if (!response.ok || response.status === 402) {
         throw new Error(result.error || 'Payment failed');
       }
 
-      // Step 5: Success!
+      // Step 3: Success!
       setState({
         status: 'success',
         result: result.result,
         error: null,
-        transactionSignature: result.transactionSignature,
+        transactionSignature: result.transaction,
       });
 
       toast.success('Gatya successful!');
@@ -121,7 +135,7 @@ export function useGatya() {
 
       toast.error(errorMessage);
     }
-  }, [publicKey, signTransaction, connected, connection, network]);
+  }, [connected, selectedAccount, fetchWithPayment]);
 
   return {
     ...state,
