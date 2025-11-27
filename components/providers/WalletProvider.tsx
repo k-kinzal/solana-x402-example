@@ -51,34 +51,53 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [connecting, setConnecting] = useState(false);
 
   // Auto-connect: try silent connect on all available wallets
+  // Use a delay to ensure wallet extensions have time to register
   useEffect(() => {
-    if (autoConnectAttempted.current || wallets.length === 0 || selectedWallet) return;
-    autoConnectAttempted.current = true;
+    if (selectedWallet) return;
 
-    const tryAutoConnect = async () => {
-      for (const wallet of wallets) {
-        if (!wallet.features.includes(StandardConnect)) continue;
+    console.log('[WalletProvider] Auto-connect check:', {
+      attempted: autoConnectAttempted.current,
+      walletsCount: wallets.length,
+      walletNames: wallets.map(w => w.name),
+      hasSelectedWallet: !!selectedWallet,
+    });
 
-        try {
-          const connectFeature = getWalletFeature(wallet, StandardConnect) as StandardConnectFeature[typeof StandardConnect];
-          // Silent connect: only returns accounts if already authorized
-          const { accounts } = await connectFeature.connect({ silent: true });
+    // Wait a bit for wallet extensions to register, then try auto-connect
+    const timeoutId = setTimeout(() => {
+      if (autoConnectAttempted.current || wallets.length === 0 || selectedWallet) return;
+      autoConnectAttempted.current = true;
 
-          if (accounts && accounts.length > 0) {
-            setSelectedWallet(wallet);
-            const uiAccount = wallet.accounts.find((a) =>
-              accounts.some((connected) => connected.address === a.address)
-            );
-            setSelectedAccount(uiAccount ?? wallet.accounts[0] ?? null);
-            break; // Stop after first successful connection
+      const tryAutoConnect = async () => {
+        for (const wallet of wallets) {
+          console.log('[WalletProvider] Trying auto-connect for:', wallet.name, 'features:', wallet.features);
+          if (!wallet.features.includes(StandardConnect)) continue;
+
+          try {
+            const connectFeature = getWalletFeature(wallet, StandardConnect) as StandardConnectFeature[typeof StandardConnect];
+            // Silent connect: only returns accounts if already authorized
+            const { accounts } = await connectFeature.connect({ silent: true });
+            console.log('[WalletProvider] Silent connect result for', wallet.name, ':', accounts);
+
+            if (accounts && accounts.length > 0) {
+              setSelectedWallet(wallet);
+              const uiAccount = wallet.accounts.find((a) =>
+                accounts.some((connected) => connected.address === a.address)
+              );
+              setSelectedAccount(uiAccount ?? wallet.accounts[0] ?? null);
+              console.log('[WalletProvider] Auto-connected to:', wallet.name);
+              break; // Stop after first successful connection
+            }
+          } catch (err) {
+            console.log('[WalletProvider] Silent connect failed for', wallet.name, ':', err);
+            // Silent connect failed, try next wallet
           }
-        } catch {
-          // Silent connect failed, try next wallet
         }
-      }
-    };
+      };
 
-    tryAutoConnect();
+      tryAutoConnect();
+    }, 500); // Wait 500ms for wallet extensions to register
+
+    return () => clearTimeout(timeoutId);
   }, [wallets, selectedWallet]);
 
   // Watch for account changes in the selected wallet
