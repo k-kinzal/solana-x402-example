@@ -47,10 +47,11 @@ x402 is an open protocol that enables native payments on the web using the HTTP 
 
 ## Tech Stack
 
-- **Frontend**: Next.js 16, React 19, TypeScript
+- **Frontend**: Next.js 15, React 19, TypeScript
 - **Styling**: Tailwind CSS 4, Framer Motion
-- **Blockchain**: Solana Web3.js, SPL Token
-- **Wallet**: Solana Wallet Adapter
+- **Blockchain**: @solana/kit, @solana-program/token
+- **Wallet**: @solana/react, @wallet-standard/react
+- **Payments**: x402, x402-fetch, x402-next
 
 ## Getting Started
 
@@ -88,32 +89,76 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```
 ├── app/
 │   ├── api/
-│   │   └── gatya/
-│   │       └── route.ts      # x402 API endpoint
+│   │   ├── gatya/
+│   │   │   └── route.ts          # Protected gatya API endpoint
+│   │   └── facilitator/          # x402 facilitator endpoints
+│   │       ├── verify/route.ts   # Payment verification
+│   │       ├── settle/route.ts   # Transaction settlement
+│   │       └── supported/route.ts
 │   ├── layout.tsx
 │   └── page.tsx
 ├── components/
 │   ├── gatya/
-│   │   ├── GatyaButton.tsx   # Main gatya button
-│   │   ├── GatyaResult.tsx   # Result dialog
+│   │   ├── GatyaButton.tsx       # Main gatya button
+│   │   ├── GatyaSection.tsx      # Gatya section container
+│   │   ├── GatyaSectionConnected.tsx
+│   │   ├── GatyaResult.tsx       # Result dialog
 │   │   └── ParticleEffect.tsx
 │   ├── wallet/
 │   │   ├── WalletButton.tsx
 │   │   └── NetworkSelector.tsx
-│   └── ui/                   # shadcn/ui components
+│   ├── layout/
+│   │   ├── Header.tsx
+│   │   ├── Footer.tsx
+│   │   └── ThemeToggle.tsx
+│   ├── providers/
+│   │   ├── index.tsx
+│   │   ├── NetworkProvider.tsx
+│   │   ├── ThemeProvider.tsx
+│   │   └── WalletProvider.tsx
+│   └── ui/                       # shadcn/ui components
 ├── hooks/
-│   ├── useGatya.ts           # Gatya logic hook
-│   └── useNetwork.ts         # Network switching
-└── lib/
-    ├── gatya/
-    │   └── messages.ts       # 100 gatya messages
-    └── solana/
-        ├── constants.ts      # Network config, USDC mints
-        ├── transaction.ts    # Payment requirements
-        └── verify.ts         # Transaction verification
+│   ├── useGatya.ts               # Gatya logic with x402-fetch
+│   └── useNetwork.ts             # Network switching
+├── lib/
+│   ├── gatya/
+│   │   └── messages.ts           # 100 gatya messages
+│   ├── solana/
+│   │   └── constants.ts          # Network config, USDC mints
+│   └── x402/
+│       └── middleware.ts         # Custom x402 middleware for SVM
+└── middleware.ts                 # Next.js middleware for payment protection
 ```
 
 ## x402 Implementation Details
+
+This project uses the [x402 protocol](https://www.x402.org/) with custom middleware for Solana (SVM) support.
+
+### Architecture
+
+```
+Client (x402-fetch)           Server (middleware.ts)           Facilitator API
+       │                              │                              │
+       │  1. GET /api/gatya           │                              │
+       │ ────────────────────────────>│                              │
+       │                              │                              │
+       │  2. 402 + PaymentRequirements│                              │
+       │ <────────────────────────────│                              │
+       │                              │                              │
+       │  (sign transaction)          │                              │
+       │                              │                              │
+       │  3. GET + X-PAYMENT header   │                              │
+       │ ────────────────────────────>│  4. POST /verify             │
+       │                              │ ────────────────────────────>│
+       │                              │  5. { isValid: true }        │
+       │                              │ <────────────────────────────│
+       │                              │  6. POST /settle             │
+       │                              │ ────────────────────────────>│
+       │                              │  7. { success, transaction } │
+       │                              │ <────────────────────────────│
+       │  8. 200 + Content            │                              │
+       │ <────────────────────────────│                              │
+```
 
 ### Payment Requirements (402 Response)
 
@@ -124,55 +169,66 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
   network: 'solana-devnet',
   maxAmountRequired: '10000',  // 0.01 USDC (6 decimals)
   resource: '/api/gatya',
-  description: 'Gatya draw - 0.01 USDC',
+  description: 'Gatya draw',
   payTo: 'DE3nhgFvCa7MryXjcdtMyo8m9y7Vnzn4gHSmjNGzgtyp',
   asset: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'  // USDC mint
 }
 ```
 
-### Solana-Specific Implementation Points
+### Key Components
 
-#### 1. Transaction Verification
+#### 1. Client-Side: x402-fetch
 
-The server verifies the payment transaction before broadcasting:
-
-```typescript
-// 1. Decode the base64-encoded transaction
-const transaction = VersionedTransaction.deserialize(buffer);
-
-// 2. Verify signature exists
-const signatures = transaction.signatures;
-
-// 3. Check for valid SPL token transfer
-// - Correct recipient ATA
-// - Correct amount (>= required)
-// - Correct token mint (USDC)
-
-// 4. Simulate transaction
-await connection.simulateTransaction(transaction);
-
-// 5. Broadcast transaction
-await connection.sendRawTransaction(serializedTx);
-```
-
-#### 2. Associated Token Account (ATA) Handling
-
-If the recipient's USDC token account doesn't exist, the transaction includes an instruction to create it:
+The client uses `x402-fetch` to automatically handle the 402 payment flow:
 
 ```typescript
-if (!recipientAtaExists) {
-  transaction.add(
-    createAssociatedTokenAccountInstruction(
-      payer,
-      recipientAta,
-      RECIPIENT_WALLET,
-      usdcMint
-    )
-  );
-}
+import { wrapFetchWithPayment } from 'x402-fetch';
+
+const fetchWithPayment = wrapFetchWithPayment(
+  fetch,
+  transactionSigner,
+  PAYMENT_AMOUNT,
+  customSelector,
+  { svmConfig: { rpcUrl: NETWORKS.devnet.endpoint } }
+);
+
+// Automatically handles 402 → sign → retry flow
+const response = await fetchWithPayment('/api/gatya');
 ```
 
-#### 3. Network-Specific USDC Mints
+#### 2. Server-Side: Custom Middleware
+
+Next.js middleware protects routes with payment requirements:
+
+```typescript
+// middleware.ts
+export const middleware = paymentMiddleware(
+  RECIPIENT_WALLET,
+  {
+    '/api/gatya': {
+      price: '$0.01',
+      network: 'solana-devnet',
+      config: { description: 'Gatya draw' },
+    },
+  },
+  { url: getFacilitatorUrl() }
+);
+```
+
+#### 3. Facilitator API: Verify & Settle
+
+**Verify** (`/api/facilitator/verify`):
+- Decodes the base64-encoded transaction
+- Verifies at least one valid signature exists
+- Checks for TransferChecked instruction to Token Program
+- Validates USDC mint address and recipient ATA
+- Confirms transfer amount meets requirements
+
+**Settle** (`/api/facilitator/settle`):
+- Broadcasts the signed transaction to Solana
+- Returns the transaction signature on success
+
+#### 4. Network-Specific USDC Mints
 
 ```typescript
 const USDC_MINTS = {
@@ -182,9 +238,9 @@ const USDC_MINTS = {
 };
 ```
 
-#### 4. Replay Attack Prevention
+#### 5. Replay Attack Prevention
 
-Solana blockchain naturally prevents replay attacks - the same signed transaction cannot be processed twice. The server also checks for "already processed" errors.
+Solana blockchain naturally prevents replay attacks - the same signed transaction cannot be processed twice. The facilitator also handles "already processed" errors gracefully.
 
 ## Configuration
 
@@ -201,7 +257,8 @@ NEXT_PUBLIC_SOLANA_RPC_DEVNET=https://your-devnet-endpoint.com
 
 - **Recipient Wallet**: Edit `RECIPIENT_WALLET` in `lib/solana/constants.ts`
 - **Payment Amount**: Edit `PAYMENT_AMOUNT` in `lib/solana/constants.ts`
-- **Gacha Messages**: Edit `lib/gatya/messages.ts`
+- **Gacha Messages**: Edit `lib/gatya/messages.ts` (80 Common, 15 Rare, 5 Super Rare)
+- **Protected Routes**: Configure routes in `middleware.ts`
 
 ## Deployment
 
@@ -232,6 +289,7 @@ MIT
 ## Resources
 
 - [x402 Protocol](https://www.x402.org/)
+- [x402 npm packages](https://www.npmjs.com/package/x402)
 - [Solana Documentation](https://docs.solana.com/)
-- [SPL Token Documentation](https://spl.solana.com/token)
-- [Solana Wallet Adapter](https://github.com/solana-labs/wallet-adapter)
+- [@solana/kit](https://www.npmjs.com/package/@solana/kit)
+- [Wallet Standard](https://github.com/wallet-standard/wallet-standard)
